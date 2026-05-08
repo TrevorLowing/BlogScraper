@@ -24,6 +24,7 @@ _DEFAULT_TRANSLATOR_ALLOWED_HOSTS: tuple[str, ...] = ()
 _DISALLOWED_EXTRA_HEADERS = frozenset(
     {"host", "authorization", "ocp-apim-subscription-key"}
 )
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
 
 
 def _parse_csv_urls(value: str) -> tuple[str, ...]:
@@ -98,6 +99,10 @@ def _validate_https_url(
     ):
         raise ValueError(f"{env_name} host is not in allowed hosts")
     return url.rstrip("/")
+
+
+def _truthy(raw: str) -> bool:
+    return raw.strip().lower() in _TRUTHY
 
 
 @dataclass(frozen=True)
@@ -182,6 +187,7 @@ class BlogScraperConfig:
     translator_key: str = ""
     translator_region: str = ""
     scrape_timeout_seconds: float = 60.0
+    output_include_images: bool = False
 
     @staticmethod
     def from_environ() -> BlogScraperConfig:
@@ -241,6 +247,9 @@ class BlogScraperConfig:
                 ""),
             scrape_timeout_seconds=float(
                 os.environ.get("SCRAPE_TIMEOUT_SECONDS", "60")
+            ),
+            output_include_images=_truthy(
+                os.environ.get("OUTPUT_INCLUDE_IMAGES", "false")
             ),
         )
 

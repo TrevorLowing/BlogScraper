@@ -55,6 +55,10 @@ def test_translate_retries_429_then_succeeds(monkeypatch):
     ]
     fake = _FakeClient(responses)
     monkeypatch.setattr("blog_scraper.translate.httpx.Client", lambda **_kwargs: fake)
+    monkeypatch.setattr(
+        "blog_scraper.translate.random.uniform",
+        lambda *_args, **_kwargs: 0.0,
+    )
     sleeps: list[float] = []
     monkeypatch.setattr(
         "blog_scraper.translate.time.sleep",
@@ -75,6 +79,10 @@ def test_translate_honors_retry_after_header(monkeypatch):
     ]
     fake = _FakeClient(responses)
     monkeypatch.setattr("blog_scraper.translate.httpx.Client", lambda **_kwargs: fake)
+    monkeypatch.setattr(
+        "blog_scraper.translate.random.uniform",
+        lambda *_args, **_kwargs: 0.0,
+    )
     sleeps: list[float] = []
     monkeypatch.setattr(
         "blog_scraper.translate.time.sleep",
@@ -85,3 +93,50 @@ def test_translate_honors_retry_after_header(monkeypatch):
 
     assert out == "world"
     assert sleeps == [3.0]
+
+
+def test_translate_retries_on_connect_error(monkeypatch):
+    req = httpx.Request(
+        "POST",
+        "https://api.cognitive.microsofttranslator.com/translate",
+    )
+    responses = [
+        httpx.ConnectError("boom", request=req),
+        _resp(200, [{"translations": [{"text": "ok"}]}]),
+    ]
+
+    class _FakeClientWithError:
+        def __init__(self):
+            self.calls = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, *args, **kwargs):
+            idx = self.calls
+            self.calls += 1
+            obj = responses[idx]
+            if isinstance(obj, Exception):
+                raise obj
+            return obj
+
+    fake = _FakeClientWithError()
+    monkeypatch.setattr("blog_scraper.translate.httpx.Client", lambda **_kwargs: fake)
+    monkeypatch.setattr(
+        "blog_scraper.translate.random.uniform",
+        lambda *_args, **_kwargs: 0.0,
+    )
+    sleeps: list[float] = []
+    monkeypatch.setattr(
+        "blog_scraper.translate.time.sleep",
+        lambda s: sleeps.append(float(s)),
+    )
+
+    out = translate_zh_fragment_to_en("你好", _cfg())
+
+    assert out == "ok"
+    assert fake.calls == 2
+    assert sleeps == [1.0]

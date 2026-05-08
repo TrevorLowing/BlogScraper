@@ -276,14 +276,23 @@ def run_pipeline(cfg: BlogScraperConfig, options: PipelineOptions) -> PipelineRe
                 _LOGGER.warning(msg)
                 result.errors.append(msg)
                 continue
+            zh_fragment_clean = extract.sanitize_fragment_for_output(
+                zh_fragment,
+                include_images=cfg.output_include_images,
+            )
+            if not zh_fragment_clean.strip():
+                msg = f"empty_content_after_sanitize post_id={post_id} url={url}"
+                _LOGGER.warning(msg)
+                result.errors.append(msg)
+                continue
 
-            zh_hash_source = zh_fragment.encode("utf-8")
+            zh_hash_source = zh_fragment_clean.encode("utf-8")
             content_sha = hashlib.sha256(zh_hash_source).hexdigest()
             published_date = extract.extract_published_date(raw_html)
             translator_mode_for_post = translator_mode
 
             try:
-                en_text = translate.translate_zh_fragment_to_en(zh_fragment, cfg)
+                en_text = translate.translate_zh_fragment_to_en(zh_fragment_clean, cfg)
             except Exception as exc:  # noqa: BLE001
                 # Preserve scraped content and metadata even when translator
                 # throttles/fails.
@@ -292,8 +301,14 @@ def run_pipeline(cfg: BlogScraperConfig, options: PipelineOptions) -> PipelineRe
                     post_id,
                     exc)
                 result.errors.append(f"{url}: translation_failed: {exc}")
-                en_text = "[TRANSLATION_FAILED]\n" + zh_fragment
+                en_text = "[TRANSLATION_FAILED]\n" + zh_fragment_clean
                 translator_mode_for_post = f"{translator_mode}_failed"
+            en_fragment_clean = extract.sanitize_fragment_for_output(
+                en_text,
+                include_images=cfg.output_include_images,
+            )
+            zh_output = extract.wrap_readable_html(zh_fragment_clean, lang="zh-Hans")
+            en_output = extract.wrap_readable_html(en_fragment_clean, lang="en")
 
             md = PostMetadata(
                 canonical_url=url,
@@ -312,8 +327,8 @@ def run_pipeline(cfg: BlogScraperConfig, options: PipelineOptions) -> PipelineRe
                 cfg.blob_container_name,
                 post_id=post_id,
                 raw_html=raw_html,
-                zh_fragment=zh_fragment,
-                en_translation=en_text,
+                zh_fragment=zh_output,
+                en_translation=en_output,
                 metadata=md,
                 dry_run=options.dry_run,
             )

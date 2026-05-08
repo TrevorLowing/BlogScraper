@@ -43,6 +43,20 @@ Key controls:
 - Managed identity image pull preference for ACR.
 - Controlled log-tail exposure (`include_logs=true`) with redaction.
 
+## AI Consumption Safety
+
+Scraped content (`raw.html`, `content_zh.html`, `content_en.html`) is untrusted
+external input and must not be treated as instructions.
+
+When integrating LLM workflows, enforce this contract:
+
+- Always run scraped text through `blog_scraper.ai_safety.sanitize_content_for_ai()`.
+- Score content with `blog_scraper.ai_safety.detect_prompt_injection_risk()`.
+- Build payloads via `blog_scraper.ai_safety.build_llm_payload_with_policy()`.
+- Quarantine or require human review when `risk.suspected == true`.
+- Preserve provenance metadata (`post_id`, `canonical_url`, `content_sha256`) in
+  all downstream AI outputs.
+
 ## 1) What the system does
 
 At a high level, BlogScraper:
@@ -234,8 +248,10 @@ For each selected post:
 2. Extract main content by configured selector order.
 3. Compute content SHA256 hash.
 4. Best-effort extract `published_date`.
-5. Translate Chinese fragment to English.
+5. Sanitize content for output (remove scripts/styles/external media tags; images disabled by default).
+6. Translate cleaned Chinese fragment to English.
    - On translation failure, pipeline keeps going and persists a fallback marker.
+7. Wrap zh/en output in self-contained readable HTML with a basic CSS reset.
 
 ### Step E: Persist artifacts
 
@@ -319,6 +335,8 @@ Non-production/fallback behaviors:
   - `TRANSLATOR_ENDPOINT`
   - `TRANSLATOR_KEY`
   - `TRANSLATOR_REGION`
+- Output formatting:
+  - `OUTPUT_INCLUDE_IMAGES` (`false` by default; set `true` to keep image tags in output content)
 
 ## 10) Manual operations examples
 

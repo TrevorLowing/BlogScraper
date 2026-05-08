@@ -9,6 +9,8 @@ Azure-based scraper for `yidaiyilu.gov.cn` that discovers article URLs, extracts
 - Captures best-effort `published_date` metadata
 - Translates Chinese content to English (Azure Translator)
 - Persists raw HTML, Chinese content, English content, and metadata to Blob Storage
+- Produces readable, self-contained output HTML (basic CSS reset, no external CSS dependencies)
+- Removes images/media from output content by default (`OUTPUT_INCLUDE_IMAGES=false`)
 - Supports ACI execution when Function App egress is blocked
 - Includes downloader utility for recent bilingual post exports
 
@@ -64,6 +66,18 @@ Connection string resolution order:
 - Function App provides timer and HTTP triggers.
 - ACI runner can be dispatched for reliable scraping egress.
 - `scripts/` contains deployment, smoke, RBAC, and post-publish helpers.
+
+## AI Safety Note (For Future LLM Use)
+
+Scraped artifacts are untrusted content. Do not pass raw scraped HTML/content
+directly into LLM prompts.
+
+Use the AI safety utilities in `blog_scraper.ai_safety` before any LLM task:
+
+- `sanitize_content_for_ai()` to normalize and bound untrusted text
+- `detect_prompt_injection_risk()` to score injection-like markers
+- `build_llm_payload_with_policy()` to enforce fixed anti-injection policy and
+  preserve provenance metadata
 
 ## Contributing
 

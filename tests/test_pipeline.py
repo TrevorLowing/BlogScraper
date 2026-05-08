@@ -127,6 +127,8 @@ def test_run_pipeline_invokes_upload_when_storage_configured(monkeypatch):
     assert uploads[0]["post_id"] == "PIP001"
     assert uploads[0]["dry_run"] is False
     assert "Chinese line one" in uploads[0]["zh_fragment"]
+    assert "<!doctype html>" in uploads[0]["zh_fragment"].lower()
+    assert "<img" not in uploads[0]["zh_fragment"].lower()
 
 
 _LIST_B = (
@@ -237,7 +239,7 @@ def test_run_pipeline_persists_metadata_when_translation_fails(monkeypatch):
     assert len(uploads) == 1
     assert uploads[0]["post_id"] == "PIP001"
     assert uploads[0]["translator_mode"].endswith("_failed")
-    assert uploads[0]["en_translation"].startswith("[TRANSLATION_FAILED]")
+    assert "[TRANSLATION_FAILED]" in uploads[0]["en_translation"]
     assert any("translation_failed" in e for e in res.errors)
 
 
