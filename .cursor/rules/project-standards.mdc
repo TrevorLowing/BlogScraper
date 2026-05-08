@@ -1,0 +1,15 @@
+---
+description: Core standards for BlogScraper changes
+alwaysApply: true
+---
+
+# BlogScraper Project Standards
+
+- Keep changes small and focused; avoid broad refactors unless requested.
+- Prefer clear, plain-English docstrings and comments for non-obvious logic.
+- Preserve runtime behavior unless the task explicitly asks for behavior changes.
+- Do not hardcode secrets, keys, or connection strings in code or docs.
+- Keep Azure service interactions explicit and observable (clear logs and errors).
+- Add or update tests when behavior changes.
+- Favor readability over cleverness; optimize only where needed.
+- Do not use deprecated Python/PHP APIs.

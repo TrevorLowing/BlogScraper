@@ -4,7 +4,8 @@ import time
 
 import httpx
 
-# Some origins drop connections to cloud datacenter IPs; brief retries help transient cases.
+# Some origins drop connections to cloud datacenter IPs; brief retries
+# help transient cases.
 _RETRIES = 3
 _BACKOFF_SEC = 2.0
 
@@ -13,7 +14,9 @@ def fetch_html(url: str, headers: dict[str, str], timeout_seconds: float) -> str
     last: Exception | None = None
     for attempt in range(_RETRIES):
         try:
-            with httpx.Client(follow_redirects=True, headers=headers, timeout=timeout_seconds) as client:
+            with httpx.Client(
+                follow_redirects=True, headers=headers, timeout=timeout_seconds
+            ) as client:
                 response = client.get(url)
                 response.raise_for_status()
                 return response.text

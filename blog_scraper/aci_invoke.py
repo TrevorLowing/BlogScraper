@@ -1,4 +1,4 @@
-"""Create one-shot Azure Container Instances jobs that run ``python -m blog_scraper.aci_runner``."""
+"""Create one-shot ACI jobs running ``python -m blog_scraper.aci_runner``."""
 
 from __future__ import annotations
 
@@ -116,7 +116,10 @@ def build_aci_environment_variables(
         False,
     )
     blobs["SCRAPER_PIPELINE_MODE"] = (str(dopt["mode"]), False)
-    blobs["SCRAPER_PIPELINE_DRY_RUN"] = ("true" if dopt["dry_run"] else "false", False)
+    blobs["SCRAPER_PIPELINE_DRY_RUN"] = (
+        "true" if dopt["dry_run"] else "false",
+        False,
+    )
     blobs["SCRAPER_PIPELINE_FORCE"] = ("true" if dopt["force"] else "false", False)
     if dopt["max_posts"] is not None:
         blobs["SCRAPER_PIPELINE_MAX_POSTS"] = (str(dopt["max_posts"]), False)
@@ -137,7 +140,9 @@ def build_aci_environment_variables(
 def _aci_client() -> tuple[ContainerInstanceManagementClient, str]:
     sub = _subscription_id_from_environ()
     if not sub:
-        raise ValueError("Set ACI_SUBSCRIPTION_ID or AZURE_SUBSCRIPTION_ID for ACI dispatch.")
+        raise ValueError(
+            "Set ACI_SUBSCRIPTION_ID or AZURE_SUBSCRIPTION_ID for ACI dispatch."
+        )
     cred = DefaultAzureCredential(exclude_interactive_browser_credential=True)
     client = ContainerInstanceManagementClient(cred, subscription_id=sub)
     return client, sub
@@ -163,17 +168,25 @@ def start_blog_scraper_aci(
     if not rg:
         raise ValueError("ACI_RESOURCE_GROUP must be set.")
     if not image:
-        raise ValueError("ACI_IMAGE must be set (e.g. myregistry.azurecr.io/blog-scraper-runner:latest).")
+        raise ValueError(
+            "ACI_IMAGE must be set "
+            "(e.g. myregistry.azurecr.io/blog-scraper-runner:latest)."
+        )
 
     if "/" in image and not registry_server:
         registry_server = image.split("/", 1)[0]
-    is_private_registry = bool(registry_server and registry_server.endswith(".azurecr.io"))
+    is_private_registry = bool(
+        registry_server and registry_server.endswith(".azurecr.io")
+    )
     if is_private_registry and (not registry_user or not registry_password):
         raise ValueError(
-            "ACI_REGISTRY_USERNAME and ACI_REGISTRY_PASSWORD must be set for Azure Container Registry images.",
+            "ACI_REGISTRY_USERNAME and ACI_REGISTRY_PASSWORD must be set "
+            "for Azure Container Registry images.",
         )
 
-    group_name = container_group_name or sanitize_container_group_name(f"aci-bs-{uuid.uuid4().hex[:12]}")
+    group_name = container_group_name or sanitize_container_group_name(
+        f"aci-bs-{uuid.uuid4().hex[:12]}"
+    )
 
     env_block = build_aci_environment_variables(options)
 
@@ -192,7 +205,10 @@ def start_blog_scraper_aci(
     credentials: list[ImageRegistryCredential] | None = None
     if registry_server and registry_user and registry_password:
         credentials = [
-            ImageRegistryCredential(server=registry_server, username=registry_user, password=registry_password),
+            ImageRegistryCredential(
+                server=registry_server,
+                username=registry_user,
+                password=registry_password),
         ]
 
     cgroup = ContainerGroup(
@@ -211,7 +227,12 @@ def start_blog_scraper_aci(
     else:
         kwargs["polling"] = False
 
-    _LOGGER.info("Starting ACI group=%s rg=%s image=%s wait=%s", group_name, rg, image, wait)
+    _LOGGER.info(
+        "Starting ACI group=%s rg=%s image=%s wait=%s",
+        group_name,
+        rg,
+        image,
+        wait)
     client.container_groups.begin_create_or_update(
         rg,
         group_name,
@@ -230,7 +251,9 @@ def start_blog_scraper_aci(
     }
 
 
-def fetch_aci_job_status(container_group_name: str | None, *, resource_group: str | None = None) -> dict[str, Any]:
+def fetch_aci_job_status(
+    container_group_name: str | None, *, resource_group: str | None = None
+) -> dict[str, Any]:
     """Inspect provisioning state + container instance view for a scrape job."""
     rg = (resource_group or os.environ.get("ACI_RESOURCE_GROUP") or "").strip()
     ctr_name = os.environ.get("ACI_CONTAINER_NAME", "blogscraper").strip()
@@ -268,7 +291,9 @@ def fetch_aci_job_status(container_group_name: str | None, *, resource_group: st
     }
 
 
-def delete_aci_job(container_group_name: str, *, resource_group: str | None = None) -> None:
+def delete_aci_job(
+    container_group_name: str, *, resource_group: str | None = None
+) -> None:
     rg = (resource_group or os.environ.get("ACI_RESOURCE_GROUP") or "").strip()
     if not rg:
         raise ValueError("ACI_RESOURCE_GROUP must be set.")

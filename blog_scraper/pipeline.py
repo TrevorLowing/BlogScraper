@@ -19,15 +19,31 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class PipelineOptions:
+    """
+    User-controlled knobs for a pipeline run.
+
+    Plain-English intent:
+    - incremental mode: check only first list page (fast, "new posts" behavior)
+    - historical mode: walk more list pages for backfill
+    - dry_run: execute logic but skip blob writes
+    - force: reprocess posts even if they already exist in storage
+    """
     mode: str = "incremental"  # incremental | historical
-    max_pages: int | None = None  # list depth cap for historical / backfill (None = all inferred)
+    # list depth cap for historical / backfill (None = all inferred)
+    max_pages: int | None = None
     max_posts: int | None = None
     dry_run: bool = False
     force: bool = False
 
 
 def pipeline_options_from_dict(data: dict | None) -> PipelineOptions:
-    """Build pipeline options from a JSON object (HTTP body fragment or PIPELINE_OPTIONS_JSON)."""
+    """
+    Parse run options from JSON.
+
+    Used by both:
+    - HTTP request body (`/api/scrape`, `/api/scrape-aci`)
+    - ACI env payload (`PIPELINE_OPTIONS_JSON`)
+    """
     if not data or not isinstance(data, dict):
         return PipelineOptions()
     mode = data.get("mode", "incremental")
@@ -73,7 +89,10 @@ def _discover_urls_for_one_index(
     exclude_paths: frozenset[str],
 ) -> tuple[list[str], int]:
     first_url = discover.list_page_url(site_base, index_path, None)
-    first_html = fetch.fetch_html(first_url, headers=headers, timeout_seconds=scrape_timeout_seconds)
+    first_html = fetch.fetch_html(
+        first_url,
+        headers=headers,
+        timeout_seconds=scrape_timeout_seconds)
 
     incremental_cap = 1 if options.mode == "incremental" else options.max_pages
     pages = discover.plan_list_pages(site_base, index_path, first_html, incremental_cap)
@@ -84,7 +103,8 @@ def _discover_urls_for_one_index(
 
     for pg in pages:
         u = discover.list_page_url(site_base, index_path, pg if pg > 1 else None)
-        html = first_html if pg == 1 else fetch.fetch_html(u, headers=headers, timeout_seconds=scrape_timeout_seconds)
+        html = first_html if pg == 1 else fetch.fetch_html(
+            u, headers=headers, timeout_seconds=scrape_timeout_seconds)
         for href in discover.extract_article_hrefs(html, site_base, excl):
             if href not in seen:
                 seen.add(href)
@@ -93,8 +113,19 @@ def _discover_urls_for_one_index(
     return urls, len(pages)
 
 
-def discover_all_urls(cfg: BlogScraperConfig, headers: dict[str, str], options: PipelineOptions) -> tuple[list[str], int, list[str]]:
-    """Return (deduplicated article urls, total list pages walked, per-target discovery errors)."""
+def discover_all_urls(
+    cfg: BlogScraperConfig,
+    headers: dict[str, str],
+    options: PipelineOptions,
+) -> tuple[list[str], int, list[str]]:
+    """
+    Discover unique article URLs across all configured list targets.
+
+    Returns:
+    - deduplicated article URLs
+    - total list pages walked
+    - non-fatal discovery errors (per target)
+    """
     excl = frozenset(cfg.exclude_paths)
     out: list[str] = []
     global_seen: set[str] = set()
@@ -125,8 +156,30 @@ def discover_all_urls(cfg: BlogScraperConfig, headers: dict[str, str], options: 
 
 
 def run_pipeline(cfg: BlogScraperConfig, options: PipelineOptions) -> PipelineResult:
+    """
+    End-to-end scrape pipeline.
+
+    Flow:
+    1) validate required config
+    2) discover article URLs
+    3) skip existing posts unless force=true
+    4) fetch + extract + translate per post
+    5) persist artifacts + metadata to blob
+    6) return summary counters + collected errors
+    """
     crawl_run_id = str(uuid.uuid4())
     headers = merge_request_headers(cfg)
+    _LOGGER.info(
+        "Pipeline start run_id=%s mode=%s dry_run=%s force=%s max_pages=%s "
+        "max_posts=%s targets=%s",
+        crawl_run_id,
+        options.mode,
+        options.dry_run,
+        options.force,
+        options.max_pages,
+        options.max_posts,
+        len(cfg.list_targets),
+    )
 
     result = PipelineResult(
         crawl_run_id=crawl_run_id,
@@ -138,9 +191,12 @@ def run_pipeline(cfg: BlogScraperConfig, options: PipelineOptions) -> PipelineRe
         list_targets_attempted=len(cfg.list_targets),
     )
 
+    # Real writes require a blob connection string.
+    # We allow missing storage only in dry-run mode for local testing/debugging.
     if not cfg.blob_connection_string and not options.dry_run:
         result.errors.append(
-            "BLOG_SCRAPER_STORAGE (or AzureWebJobsStorage) is empty — cannot persist without dry_run."
+            "BLOG_SCRAPER_STORAGE (or AzureWebJobsStorage) is empty - "
+            "cannot persist without dry_run."
         )
         return result
 
@@ -154,26 +210,50 @@ def run_pipeline(cfg: BlogScraperConfig, options: PipelineOptions) -> PipelineRe
     result.errors.extend(discovery_errors)
     result.list_pages_walked = walked
     result.posts_discovered = len(urls)
+    _LOGGER.info(
+        "Discovery complete run_id=%s pages_walked=%s posts_discovered=%s "
+        "discovery_errors=%s",
+        crawl_run_id,
+        result.list_pages_walked,
+        result.posts_discovered,
+        len(discovery_errors),
+    )
 
+    # Snapshot existing post ids once to avoid repeated blob lookups for each post.
     existing: set[str] = set()
     if cfg.blob_connection_string and not options.force:
-        existing = list_existing_post_ids(cfg.blob_connection_string, cfg.blob_container_name)
+        existing = list_existing_post_ids(
+            cfg.blob_connection_string,
+            cfg.blob_container_name)
 
+    # Translator mode is recorded in metadata for observability and auditing.
     translator_mode = "stub" if not cfg.translator_key.strip() else "azure_translator"
 
     for url in urls:
-        if options.max_posts is not None and result.posts_processed >= options.max_posts:
+        if (
+            options.max_posts is not None
+            and result.posts_processed >= options.max_posts
+        ):
             break
 
         post_id = discover.post_id_from_article_url(url)
 
         try:
+            # Skip already-seen posts unless the caller explicitly requests
+            # reprocessing.
             if cfg.blob_connection_string and not options.force and post_id in existing:
                 result.posts_skipped_existing += 1
+                _LOGGER.info(
+                    "Post skipped run_id=%s post_id=%s reason=already_exists",
+                    crawl_run_id,
+                    post_id,
+                )
                 continue
 
-            raw_html = fetch.fetch_html(url, headers=headers, timeout_seconds=cfg.scrape_timeout_seconds)
-            selector_used, zh_fragment = extract.extract_main_inner_html(raw_html, cfg.content_selectors)
+            raw_html = fetch.fetch_html(
+                url, headers=headers, timeout_seconds=cfg.scrape_timeout_seconds)
+            selector_used, zh_fragment = extract.extract_main_inner_html(
+                raw_html, cfg.content_selectors)
             if not zh_fragment:
                 msg = f"empty_main_content_selector post_id={post_id} url={url}"
                 _LOGGER.warning(msg)
@@ -188,8 +268,12 @@ def run_pipeline(cfg: BlogScraperConfig, options: PipelineOptions) -> PipelineRe
             try:
                 en_text = translate.translate_zh_fragment_to_en(zh_fragment, cfg)
             except Exception as exc:  # noqa: BLE001
-                # Preserve scraped content and metadata even when translator throttles/fails.
-                _LOGGER.warning("Translation failed for post_id=%s; persisting zh content only: %s", post_id, exc)
+                # Preserve scraped content and metadata even when translator
+                # throttles/fails.
+                _LOGGER.warning(
+                    "Translation failed for post_id=%s; persisting zh content only: %s",
+                    post_id,
+                    exc)
                 result.errors.append(f"{url}: translation_failed: {exc}")
                 en_text = "[TRANSLATION_FAILED]\n" + zh_fragment
                 translator_mode_for_post = f"{translator_mode}_failed"
@@ -217,13 +301,29 @@ def run_pipeline(cfg: BlogScraperConfig, options: PipelineOptions) -> PipelineRe
                 dry_run=options.dry_run,
             )
 
+            # Keep in-memory dedupe set consistent with successful writes.
             existing.add(post_id)
             result.posts_processed += 1
+            _LOGGER.info(
+                "Post processed run_id=%s post_id=%s selector=%s translator_mode=%s",
+                crawl_run_id,
+                post_id,
+                selector_used,
+                translator_mode_for_post,
+            )
 
         except Exception as exc:  # noqa: BLE001
             _LOGGER.exception("Post failed url=%s", url)
             result.errors.append(f"{url}: {exc}")
 
+    _LOGGER.info(
+        "Pipeline end run_id=%s discovered=%s skipped=%s processed=%s errors=%s",
+        crawl_run_id,
+        result.posts_discovered,
+        result.posts_skipped_existing,
+        result.posts_processed,
+        len(result.errors),
+    )
     return result
 
 

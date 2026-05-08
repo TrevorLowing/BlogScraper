@@ -8,19 +8,30 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from blog_scraper.downloader import download_recent_posts
 
 
 def _default_connection_string() -> str:
-    return os.environ.get("BLOG_SCRAPER_STORAGE", "") or os.environ.get("AzureWebJobsStorage", "")
+    return os.environ.get(
+        "BLOG_SCRAPER_STORAGE",
+        "") or os.environ.get(
+        "AzureWebJobsStorage",
+        "")
 
 
 def main() -> int:
+    from blog_scraper.downloader import download_recent_posts
+
     parser = argparse.ArgumentParser(
-        description="Download Chinese + English content for the most recent stored posts.",
+        description=(
+            "Download Chinese + English content for the most recent stored posts."
+        ),
     )
     parser.add_argument("--connection-string", default=_default_connection_string())
-    parser.add_argument("--container", default=os.environ.get("BLOB_CONTAINER_NAME", "blog-scraper"))
+    parser.add_argument(
+        "--container",
+        default=os.environ.get(
+            "BLOB_CONTAINER_NAME",
+            "blog-scraper"))
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--output-dir", default="downloads/recent-posts")
     parser.add_argument("--include-raw-html", action="store_true")
@@ -28,7 +39,8 @@ def main() -> int:
 
     if not args.connection_string.strip():
         print(
-            "Missing connection string. Pass --connection-string or set BLOG_SCRAPER_STORAGE/AzureWebJobsStorage.",
+            "Missing connection string. Pass --connection-string or set "
+            "BLOG_SCRAPER_STORAGE/AzureWebJobsStorage.",
             file=sys.stderr,
         )
         return 2

@@ -39,7 +39,8 @@ def translate_zh_fragment_to_en(text: str, cfg: BlogScraperConfig) -> str:
 
     endpoint = cfg.translator_endpoint.rstrip("/") + _TRANSLATE_PATH
     params = {"api-version": "3.0", "from": "zh-Hans", "to": "en"}
-    body: list[dict[str, Any]] = [{"text": stripped[:49000]}]  # stay under Translator limits per item
+    # stay under Translator limits per item
+    body: list[dict[str, Any]] = [{"text": stripped[:49000]}]
 
     hdrs = {
         "Ocp-Apim-Subscription-Key": cfg.translator_key,
@@ -58,7 +59,10 @@ def translate_zh_fragment_to_en(text: str, cfg: BlogScraperConfig) -> str:
                 payload = r.json()
                 break
             except httpx.HTTPStatusError as exc:
-                if r.status_code not in _RETRYABLE_STATUS_CODES or attempt >= _MAX_ATTEMPTS:
+                if (
+                    r.status_code not in _RETRYABLE_STATUS_CODES
+                    or attempt >= _MAX_ATTEMPTS
+                ):
                     raise
                 last_error = exc
                 retry_after = _retry_after_seconds(r)

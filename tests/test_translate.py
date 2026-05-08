@@ -37,8 +37,13 @@ def _cfg() -> BlogScraperConfig:
     )
 
 
-def _resp(code: int, payload: list[dict], retry_after: str | None = None) -> httpx.Response:
-    req = httpx.Request("POST", "https://api.cognitive.microsofttranslator.com/translate")
+def _resp(
+        code: int,
+        payload: list[dict],
+        retry_after: str | None = None) -> httpx.Response:
+    req = httpx.Request(
+        "POST",
+        "https://api.cognitive.microsofttranslator.com/translate")
     headers = {"Retry-After": retry_after} if retry_after else {}
     return httpx.Response(code, request=req, headers=headers, json=payload)
 
@@ -51,7 +56,10 @@ def test_translate_retries_429_then_succeeds(monkeypatch):
     fake = _FakeClient(responses)
     monkeypatch.setattr("blog_scraper.translate.httpx.Client", lambda **_kwargs: fake)
     sleeps: list[float] = []
-    monkeypatch.setattr("blog_scraper.translate.time.sleep", lambda s: sleeps.append(float(s)))
+    monkeypatch.setattr(
+        "blog_scraper.translate.time.sleep",
+        lambda s: sleeps.append(
+            float(s)))
 
     out = translate_zh_fragment_to_en("你好", _cfg())
 
@@ -68,10 +76,12 @@ def test_translate_honors_retry_after_header(monkeypatch):
     fake = _FakeClient(responses)
     monkeypatch.setattr("blog_scraper.translate.httpx.Client", lambda **_kwargs: fake)
     sleeps: list[float] = []
-    monkeypatch.setattr("blog_scraper.translate.time.sleep", lambda s: sleeps.append(float(s)))
+    monkeypatch.setattr(
+        "blog_scraper.translate.time.sleep",
+        lambda s: sleeps.append(
+            float(s)))
 
     out = translate_zh_fragment_to_en("世界", _cfg())
 
     assert out == "world"
     assert sleeps == [3.0]
-

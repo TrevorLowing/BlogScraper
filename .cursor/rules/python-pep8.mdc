@@ -1,0 +1,18 @@
+---
+description: Python style and quality rules (PEP 8)
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Python Rules (PEP 8)
+
+- Follow PEP 8 for layout, naming, imports, and whitespace.
+- Use 4 spaces per indentation level; never use tabs.
+- Keep line length <= 88 characters (prefer wrapping before this when readability improves).
+- Use `snake_case` for functions/variables, `PascalCase` for classes, `UPPER_CASE` for constants.
+- Group imports as stdlib, third-party, then local; separate groups with one blank line.
+- Add docstrings for public modules, classes, and functions.
+- Catch specific exceptions when practical; avoid bare `except`.
+- Keep functions focused and short; extract helpers for repeated or complex logic.
+- Prefer type hints for new/changed public interfaces.
+- Before finalizing Python edits, run a style check (`pycodestyle`) and fix violations in touched files.

@@ -5,7 +5,8 @@ import os
 from dataclasses import dataclass, field
 
 
-# Browser-like defaults for outbound HTTP (Azure Functions otherwise send a sparse header set).
+# Browser-like defaults for outbound HTTP (Azure Functions otherwise send
+# a sparse header set).
 DEFAULT_HTTP_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
@@ -44,29 +45,43 @@ def normalize_index_path(path: str) -> str:
 
 @dataclass(frozen=True)
 class ListTarget:
-    """One list/archive page (first page + paginated) to discover article URLs from."""
+    """One list/archive page used to discover article URLs."""
 
     site_base: str
     index_path: str
 
 
 def list_targets_from_environ() -> tuple[ListTarget, ...]:
-    """Build discovery targets from BLOG_SCRAPER_TARGETS_JSON or BLOG_INDEX_PATH + BLOG_INDEX_PATHS."""
-    default_base = os.environ.get("BLOG_SITE_BASE", "https://www.yidaiyilu.gov.cn").rstrip("/")
+    """
+    Build discovery targets from JSON override or index path variables.
+    """
+    default_base = os.environ.get(
+        "BLOG_SITE_BASE", "https://www.yidaiyilu.gov.cn"
+    ).rstrip("/")
     js = os.environ.get("BLOG_SCRAPER_TARGETS_JSON", "").strip()
     if js:
         data = json.loads(js)
         if not isinstance(data, list) or not data:
-            raise ValueError("BLOG_SCRAPER_TARGETS_JSON must be a non-empty JSON array of objects.")
+            raise ValueError(
+                "BLOG_SCRAPER_TARGETS_JSON must be a non-empty JSON array."
+            )
         targets: list[ListTarget] = []
         for i, item in enumerate(data):
             if not isinstance(item, dict):
-                raise ValueError(f"BLOG_SCRAPER_TARGETS_JSON[{i}] must be an object.")
+                raise ValueError(
+                    f"BLOG_SCRAPER_TARGETS_JSON[{i}] must be an object."
+                )
             sb = item.get("site_base")
             ip = item.get("index_path")
             if sb is None or ip is None:
-                raise ValueError(f"BLOG_SCRAPER_TARGETS_JSON[{i}] requires site_base and index_path.")
-            targets.append(ListTarget(site_base=str(sb).rstrip("/"), index_path=normalize_index_path(str(ip))))
+                raise ValueError(
+                    f"BLOG_SCRAPER_TARGETS_JSON[{i}] requires site_base and index_path."
+                )
+            targets.append(
+                ListTarget(
+                    site_base=str(sb).rstrip("/"),
+                    index_path=normalize_index_path(
+                        str(ip))))
         return tuple(targets)
 
     primary = normalize_index_path(os.environ.get("BLOG_INDEX_PATH", "/list/w/xmzb"))
@@ -119,7 +134,10 @@ class BlogScraperConfig:
                 ".news-news-box,.news-details-content",
             )
         )
-        excludes = _parse_csv_urls(os.environ.get("BLOG_HTML_EXCLUDE_PATHS", "/p/178715.html"))
+        excludes = _parse_csv_urls(
+            os.environ.get(
+                "BLOG_HTML_EXCLUDE_PATHS",
+                "/p/178715.html"))
         targets = list_targets_from_environ()
         first = targets[0]
 
@@ -131,12 +149,22 @@ class BlogScraperConfig:
             blob_container_name=container,
             user_agent=ua,
             extra_headers=_parse_headers_json(raw_headers),
-            content_selectors=selectors if selectors else (".news-details-content",),
-            exclude_paths=tuple(excludes),
-            translator_endpoint=os.environ.get("TRANSLATOR_ENDPOINT", ""),
-            translator_key=os.environ.get("TRANSLATOR_KEY", ""),
-            translator_region=os.environ.get("TRANSLATOR_REGION", ""),
-            scrape_timeout_seconds=float(os.environ.get("SCRAPE_TIMEOUT_SECONDS", "60")),
+            content_selectors=selectors if selectors else (
+                ".news-details-content",
+            ),
+            exclude_paths=excludes,
+            translator_endpoint=os.environ.get(
+                "TRANSLATOR_ENDPOINT",
+                ""),
+            translator_key=os.environ.get(
+                "TRANSLATOR_KEY",
+                ""),
+            translator_region=os.environ.get(
+                "TRANSLATOR_REGION",
+                ""),
+            scrape_timeout_seconds=float(
+                os.environ.get("SCRAPE_TIMEOUT_SECONDS", "60")
+            ),
         )
 
 

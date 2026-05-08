@@ -26,16 +26,26 @@ def _truthy(raw: str) -> bool:
 
 
 def _pipeline_options_from_env() -> PipelineOptions:
-    """Prefer PIPELINE_OPTIONS_JSON when valid; otherwise SCRAPER_PIPELINE_* (commas in JSON break ``az container create``)."""
+    """
+    Prefer PIPELINE_OPTIONS_JSON when valid, otherwise SCRAPER_PIPELINE_*.
+
+    Commas in JSON can break ``az container create`` env parsing.
+    """
     raw = os.environ.get("PIPELINE_OPTIONS_JSON", "").strip()
     if raw:
         try:
             data = json.loads(raw)
             return pipeline_options_from_dict(data if isinstance(data, dict) else None)
         except json.JSONDecodeError as exc:
-            _LOGGER.warning("Invalid PIPELINE_OPTIONS_JSON (%s); using SCRAPER_PIPELINE_* scalars.", exc)
+            _LOGGER.warning(
+                "Invalid PIPELINE_OPTIONS_JSON (%s); "
+                "using SCRAPER_PIPELINE_* scalars.",
+                exc,
+            )
 
-    mode = os.environ.get("SCRAPER_PIPELINE_MODE", "incremental").strip() or "incremental"
+    mode = os.environ.get(
+        "SCRAPER_PIPELINE_MODE",
+        "incremental").strip() or "incremental"
     dry = _truthy(os.environ.get("SCRAPER_PIPELINE_DRY_RUN", ""))
     force = _truthy(os.environ.get("SCRAPER_PIPELINE_FORCE", ""))
     mposts = os.environ.get("SCRAPER_PIPELINE_MAX_POSTS", "").strip()
@@ -51,7 +61,10 @@ def _pipeline_options_from_env() -> PipelineOptions:
     )
 
 
-def _nonzero_exit(res: PipelineResult, cfg: BlogScraperConfig, options: PipelineOptions) -> bool:
+def _nonzero_exit(
+        res: PipelineResult,
+        cfg: BlogScraperConfig,
+        options: PipelineOptions) -> bool:
     if any(e.startswith("discovery:") for e in res.errors):
         return True
     if not options.dry_run and not (cfg.blob_connection_string or "").strip():

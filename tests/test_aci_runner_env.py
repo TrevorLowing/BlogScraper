@@ -20,7 +20,8 @@ def test_aci_runner_scalars_when_json_invalid(monkeypatch) -> None:
 def test_aci_runner_prefers_valid_json(monkeypatch) -> None:
     from blog_scraper.aci_runner import _pipeline_options_from_env
 
-    monkeypatch.setenv("PIPELINE_OPTIONS_JSON", json.dumps({"mode": "incremental", "dry_run": True, "max_posts": 9}))
+    monkeypatch.setenv("PIPELINE_OPTIONS_JSON", json.dumps(
+        {"mode": "incremental", "dry_run": True, "max_posts": 9}))
     monkeypatch.setenv("SCRAPER_PIPELINE_MAX_POSTS", "1")
 
     opts = _pipeline_options_from_env()

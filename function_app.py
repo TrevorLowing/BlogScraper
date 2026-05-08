@@ -23,6 +23,12 @@ _TRUTHY = {"1", "true", "yes", "on"}
 
 
 def _options_from_http_body(raw: bytes | None) -> PipelineOptions:
+    """
+    Parse optional JSON body into PipelineOptions.
+
+    We intentionally fail open (return defaults) if body parsing fails so
+    operators can still trigger a run even with malformed JSON.
+    """
     if not raw:
         return PipelineOptions()
     try:
@@ -39,37 +45,80 @@ def _options_from_http_body(raw: bytes | None) -> PipelineOptions:
     use_monitor=True,
 )
 def scheduled_scraper(timer: func.TimerRequest) -> None:
+    """
+    Timer-triggered incremental run.
+
+    Behavior:
+    - If ACI_SCHEDULED is truthy, dispatches a container run (preferred when
+      Function egress is unreliable for the source website).
+    - Otherwise runs the pipeline directly inside Function runtime.
+    """
     if getattr(timer, "past_due", False):
         _LOGGER.info("Scheduled run firing (past due).")
     if os.environ.get("ACI_SCHEDULED", "").lower() in _TRUTHY:
-        from blog_scraper.aci_invoke import aci_dispatcher_configured, start_blog_scraper_aci
+        from blog_scraper.aci_invoke import (
+            aci_dispatcher_configured,
+            start_blog_scraper_aci,
+        )
 
         if not aci_dispatcher_configured():
-            _LOGGER.error("ACI_SCHEDULED is set but ACI dispatcher env is incomplete; skipping run.")
+            _LOGGER.error(
+                "ACI_SCHEDULED is set but ACI dispatcher env is incomplete; "
+                "skipping run."
+            )
             return
         try:
-            info = start_blog_scraper_aci(PipelineOptions(mode="incremental"), wait=False)
-            _LOGGER.info("Dispatched incremental scrape via ACI: %s", info)
+            info = start_blog_scraper_aci(
+                PipelineOptions(
+                    mode="incremental"),
+                wait=False)
+            _LOGGER.info(
+                "Dispatched incremental scrape via ACI: %s",
+                info,
+            )
         except ValueError as exc:
-            _LOGGER.warning("ACI dispatcher rejected scheduled run due to invalid configuration: %s", exc)
+            _LOGGER.warning(
+                "ACI dispatcher rejected scheduled run due to invalid "
+                "configuration: %s",
+                exc,
+            )
         except RuntimeError:
             _LOGGER.exception("Scheduled ACI dispatch runtime failure.")
         return
     cfg = BlogScraperConfig.from_environ()
     res = run_pipeline(cfg, PipelineOptions(mode="incremental"))
     summary = pipeline_result_summary(res)
-    _LOGGER.info("Incremental scrape summary: %s", summary)
+    _LOGGER.info(
+        "Incremental scrape summary: %s",
+        summary,
+    )
 
 
 @app.route(route="scrape", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
 def scrape_http(req: func.HttpRequest) -> func.HttpResponse:
+    """HTTP API to run scraper in-process and return a compact JSON summary."""
     cfg = BlogScraperConfig.from_environ()
     options = _options_from_http_body(req.get_body())
+    _LOGGER.info(
+        "HTTP scrape start mode=%s dry_run=%s force=%s max_pages=%s max_posts=%s",
+        options.mode,
+        options.dry_run,
+        options.force,
+        options.max_pages,
+        options.max_posts,
+    )
     res = run_pipeline(cfg, options)
     body = {
         **pipeline_result_summary(res),
         "errors": res.errors[:50],
     }
+    _LOGGER.info(
+        "HTTP scrape end run_id=%s processed=%s skipped=%s errors=%s",
+        body.get("crawl_run_id"),
+        body.get("posts_processed"),
+        body.get("posts_skipped_existing"),
+        body.get("error_count"),
+    )
     return func.HttpResponse(
         json.dumps(body, ensure_ascii=False),
         status_code=200,
@@ -77,11 +126,23 @@ def scrape_http(req: func.HttpRequest) -> func.HttpResponse:
     )
 
 
-@app.route(route="scrape-aci", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+@app.route(
+    route="scrape-aci",
+    methods=["POST"],
+    auth_level=func.AuthLevel.FUNCTION,
+)
 def scrape_aci_http(req: func.HttpRequest) -> func.HttpResponse:
-    """Start a scrape in Azure Container Instances (egress differs from Consumption Functions)."""
+    """
+    HTTP API to dispatch a one-shot ACI scrape job.
 
-    from blog_scraper.aci_invoke import aci_dispatcher_configured, start_blog_scraper_aci
+    Useful when you want better network resilience than in-process execution.
+    Returns 202 with the job identity when dispatch succeeds.
+    """
+
+    from blog_scraper.aci_invoke import (
+        aci_dispatcher_configured,
+        start_blog_scraper_aci,
+    )
 
     try:
         if not aci_dispatcher_configured():
@@ -90,9 +151,10 @@ def scrape_aci_http(req: func.HttpRequest) -> func.HttpResponse:
                     {
                         "error": "aci_not_configured",
                         "hint": (
-                            "Set ACI_SUBSCRIPTION_ID (or AZURE_SUBSCRIPTION_ID), ACI_RESOURCE_GROUP, "
-                            "ACI_IMAGE, ACI_REGISTRY_USERNAME, and ACI_REGISTRY_PASSWORD when using "
-                            "ACR images (see local.settings.json.example)."
+                            "Set ACI_SUBSCRIPTION_ID (or AZURE_SUBSCRIPTION_ID), "
+                            "ACI_RESOURCE_GROUP, ACI_IMAGE, ACI_REGISTRY_USERNAME, "
+                            "and ACI_REGISTRY_PASSWORD when using ACR images "
+                            "(see local.settings.json.example)."
                         ),
                     },
                 ),
@@ -101,7 +163,21 @@ def scrape_aci_http(req: func.HttpRequest) -> func.HttpResponse:
             )
 
         options = _options_from_http_body(req.get_body())
+        _LOGGER.info(
+            "HTTP scrape-aci dispatch start mode=%s dry_run=%s force=%s "
+            "max_pages=%s max_posts=%s",
+            options.mode,
+            options.dry_run,
+            options.force,
+            options.max_pages,
+            options.max_posts,
+        )
         info = start_blog_scraper_aci(options, wait=False)
+        _LOGGER.info(
+            "HTTP scrape-aci dispatch accepted container_group=%s resource_group=%s",
+            info.get("container_group_name"),
+            info.get("resource_group"),
+        )
         return func.HttpResponse(
             json.dumps(info, ensure_ascii=False),
             status_code=202,
@@ -109,21 +185,34 @@ def scrape_aci_http(req: func.HttpRequest) -> func.HttpResponse:
         )
     except ValueError as exc:
         return func.HttpResponse(
-            json.dumps({"error": str(exc)}, ensure_ascii=False),
+            json.dumps(
+                {"error": str(exc)},
+                ensure_ascii=False,
+            ),
             status_code=400,
             mimetype="application/json; charset=utf-8",
         )
     except RuntimeError as exc:
         return func.HttpResponse(
-            json.dumps({"error": f"aci_dispatch_failed: {exc}"}, ensure_ascii=False),
+            json.dumps(
+                {"error": f"aci_dispatch_failed: {exc}"},
+                ensure_ascii=False,
+            ),
             status_code=502,
             mimetype="application/json; charset=utf-8",
         )
 
 
-@app.route(route="scrape-aci-status", methods=["GET"], auth_level=func.AuthLevel.FUNCTION)
+@app.route(route="scrape-aci-status",
+           methods=["GET"],
+           auth_level=func.AuthLevel.FUNCTION)
 def scrape_aci_status_http(req: func.HttpRequest) -> func.HttpResponse:
-    """Fetch provisioning state / tail logs for a container group."""
+    """
+    HTTP API to read state and tail logs for a previously dispatched ACI job.
+
+    Required query param: `group=<container_group_name>`
+    Optional query param: `rg=<resource_group_override>`
+    """
 
     from blog_scraper.aci_invoke import fetch_aci_job_status
 
@@ -132,12 +221,17 @@ def scrape_aci_status_http(req: func.HttpRequest) -> func.HttpResponse:
         rg_override = req.params.get("rg")
         if not name:
             return func.HttpResponse(
-                json.dumps({"error": 'Query "group=<container_group_name>" is required.'}),
+                json.dumps(
+                    {"error": 'Query "group=<container_group_name>" is required.'}
+                ),
                 status_code=400,
                 mimetype="application/json; charset=utf-8",
             )
 
-        summary = fetch_aci_job_status(name, resource_group=rg_override.strip() if rg_override else None)
+        summary = fetch_aci_job_status(
+            name,
+            resource_group=rg_override.strip() if rg_override else None,
+        )
         return func.HttpResponse(
             json.dumps(summary, ensure_ascii=False),
             status_code=200,

@@ -102,11 +102,19 @@ def test_run_pipeline_invokes_upload_when_storage_configured(monkeypatch):
         )
 
     monkeypatch.setattr("blog_scraper.pipeline.upload_post_artifacts", capture_upload)
-    monkeypatch.setattr("blog_scraper.pipeline.list_existing_post_ids", lambda *a, **kw: set())
+    monkeypatch.setattr(
+        "blog_scraper.pipeline.list_existing_post_ids",
+        lambda *a,
+        **kw: set())
 
     res = run_pipeline(
         cfg,
-        PipelineOptions(mode="historical", max_pages=1, max_posts=1, dry_run=False, force=True),
+        PipelineOptions(
+            mode="historical",
+            max_pages=1,
+            max_posts=1,
+            dry_run=False,
+            force=True),
     )
 
     assert res.posts_processed == 1
@@ -153,9 +161,17 @@ def test_two_index_paths_merge_discovered_urls(monkeypatch):
     assert mocked_upload.call_count == 2
     post_ids = {c.kwargs["post_id"] for c in mocked_upload.call_args_list}
     assert post_ids == {"PIP001", "PIP002"}
-    from blog_scraper.pipeline import pipeline_options_from_dict, pipeline_options_to_dict
+    from blog_scraper.pipeline import (
+        pipeline_options_from_dict,
+        pipeline_options_to_dict,
+    )
 
-    incoming = {"mode": "historical", "max_pages": 3, "max_posts": None, "dry_run": False, "force": False}
+    incoming = {
+        "mode": "historical",
+        "max_pages": 3,
+        "max_posts": None,
+        "dry_run": False,
+        "force": False}
     o = pipeline_options_from_dict(incoming)
     assert pipeline_options_to_dict(o) == {
         "mode": "historical",
@@ -195,7 +211,10 @@ def test_run_pipeline_persists_metadata_when_translation_fails(monkeypatch):
         )
 
     monkeypatch.setattr("blog_scraper.pipeline.upload_post_artifacts", capture_upload)
-    monkeypatch.setattr("blog_scraper.pipeline.list_existing_post_ids", lambda *a, **kw: set())
+    monkeypatch.setattr(
+        "blog_scraper.pipeline.list_existing_post_ids",
+        lambda *a,
+        **kw: set())
     monkeypatch.setattr(
         "blog_scraper.pipeline.translate.translate_zh_fragment_to_en",
         lambda *_a, **_kw: (_ for _ in ()).throw(RuntimeError("translator throttled")),
@@ -204,7 +223,12 @@ def test_run_pipeline_persists_metadata_when_translation_fails(monkeypatch):
     cfg = BlogScraperConfig.from_environ()
     res = run_pipeline(
         cfg,
-        PipelineOptions(mode="historical", max_pages=1, max_posts=1, dry_run=False, force=True),
+        PipelineOptions(
+            mode="historical",
+            max_pages=1,
+            max_posts=1,
+            dry_run=False,
+            force=True),
     )
 
     assert res.posts_processed == 1

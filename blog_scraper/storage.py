@@ -50,7 +50,11 @@ def metadata_blob_path(post_id: str) -> str:
     return f"posts/{post_id}/metadata.json"
 
 
-def post_has_metadata(connection_string: str, container_name: str, post_id: str) -> bool:
+def post_has_metadata(
+    connection_string: str,
+    container_name: str,
+    post_id: str,
+) -> bool:
     cc = _service(connection_string).get_container_client(container_name)
     return cc.get_blob_client(metadata_blob_path(post_id)).exists()
 
@@ -75,7 +79,11 @@ def upload_post_artifacts(
     payloads: tuple[tuple[str, str, str], ...] = (
         (f"posts/{post_id}/raw.html", raw_html, "text/html; charset=utf-8"),
         (f"posts/{post_id}/content_zh.html", zh_fragment, "text/html; charset=utf-8"),
-        (f"posts/{post_id}/content_en.html", en_translation, "text/html; charset=utf-8"),
+        (
+            f"posts/{post_id}/content_en.html",
+            en_translation,
+            "text/html; charset=utf-8",
+        ),
         (
             f"posts/{post_id}/metadata.json",
             json.dumps(asdict(metadata), ensure_ascii=False, indent=2),

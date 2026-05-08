@@ -7,7 +7,9 @@ from bs4 import BeautifulSoup
 _DATE_RE = re.compile(r"(?P<y>\d{4})[./-](?P<m>\d{1,2})[./-](?P<d>\d{1,2})")
 
 
-def extract_main_inner_html(html: str, selectors: tuple[str, ...]) -> tuple[str | None, str | None]:
+def extract_main_inner_html(
+    html: str, selectors: tuple[str, ...]
+) -> tuple[str | None, str | None]:
     """
     Walk selector list; return ``(matched_selector_used, inner_html_fragment)``.
     Uses BeautifulSoup ``select_one`` (CSS selectors).
@@ -42,7 +44,10 @@ def extract_published_date(html: str) -> str | None:
         if node and node.get("content"):
             m = _DATE_RE.search(str(node.get("content")))
             if m:
-                return f"{int(m.group('y')):04d}-{int(m.group('m')):02d}-{int(m.group('d')):02d}"
+                year = int(m.group("y"))
+                month = int(m.group("m"))
+                day = int(m.group("d"))
+                return f"{year:04d}-{month:02d}-{day:02d}"
 
     # Fallback: scan body text for a likely date.
     text = soup.get_text(" ", strip=True)

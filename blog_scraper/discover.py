@@ -21,11 +21,18 @@ def list_page_url(site_base: str, index_path: str, page: int | None) -> str:
     path_prefix = index_path if index_path.startswith("/") else "/" + index_path
     root = site_base.rstrip("/") + path_prefix
     parsed = urlparse(root)
-    pairs = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if k != "page"]
+    pairs = [(k, v) for k, v in parse_qsl(
+        parsed.query, keep_blank_values=True) if k != "page"]
     if page is not None and page > 1:
         pairs.append(("page", str(int(page))))
     query = urlencode(pairs)
-    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, query, parsed.fragment))
+    return urlunparse(
+        (parsed.scheme,
+         parsed.netloc,
+         parsed.path,
+         parsed.params,
+         query,
+         parsed.fragment))
 
 
 def infer_max_page_from_html(html: str) -> int | None:
@@ -49,7 +56,10 @@ def infer_max_page_from_html(html: str) -> int | None:
     return max_p if max_p > 1 else None
 
 
-def extract_article_hrefs(html: str, site_base: str, exclude_paths: frozenset[str]) -> list[str]:
+def extract_article_hrefs(
+        html: str,
+        site_base: str,
+        exclude_paths: frozenset[str]) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
     out: list[str] = []
     seen: set[str] = set()
@@ -67,7 +77,11 @@ def extract_article_hrefs(html: str, site_base: str, exclude_paths: frozenset[st
     return out
 
 
-def plan_list_pages(site_base: str, index_path: str, first_page_html: str, max_pages_cap: int | None) -> list[int]:
+def plan_list_pages(
+        site_base: str,
+        index_path: str,
+        first_page_html: str,
+        max_pages_cap: int | None) -> list[int]:
     """
     Return sorted 1-based page indices to crawl (always includes page 1).
     """
@@ -76,4 +90,3 @@ def plan_list_pages(site_base: str, index_path: str, first_page_html: str, max_p
     if max_pages_cap is not None:
         hi = min(hi, max_pages_cap)
     return list(range(1, hi + 1))
-

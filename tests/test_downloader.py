@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from blog_scraper.downloader import _date_token, _post_id_from_metadata_blob, list_recent_posts
+from blog_scraper.downloader import (
+    _date_token,
+    _post_id_from_metadata_blob,
+    list_recent_posts,
+)
 
 
 class _Blob:
@@ -48,5 +52,15 @@ def test_list_recent_posts_sorted_and_limited(monkeypatch) -> None:
 
 
 def test_date_token_prefers_published_date() -> None:
-    assert _date_token({"published_date": "2026-05-08", "fetched_at_utc": "2026-05-09T00:00:00+00:00"}) == "2026-05-08"
-    assert _date_token({"published_date": "", "fetched_at_utc": "2026-05-09T00:00:00+00:00"}) == "2026-05-09"
+    assert _date_token(
+        {
+            "published_date": "2026-05-08",
+            "fetched_at_utc": "2026-05-09T00:00:00+00:00",
+        }
+    ) == "2026-05-08"
+    assert _date_token(
+        {
+            "published_date": "",
+            "fetched_at_utc": "2026-05-09T00:00:00+00:00",
+        }
+    ) == "2026-05-09"

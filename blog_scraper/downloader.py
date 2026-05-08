@@ -10,6 +10,7 @@ from azure.storage.blob import BlobServiceClient
 
 @dataclass(frozen=True)
 class RecentPost:
+    """Minimal blob-index row used to pick and order "latest" posts."""
     post_id: str
     metadata_blob: str
     last_modified: datetime
@@ -26,7 +27,17 @@ def _post_id_from_metadata_blob(blob_name: str) -> str | None:
     return None
 
 
-def list_recent_posts(connection_string: str, container_name: str, limit: int = 10) -> list[RecentPost]:
+def list_recent_posts(
+    connection_string: str,
+    container_name: str,
+    limit: int = 10,
+) -> list[RecentPost]:
+    """
+    Return newest posts by metadata blob modification time.
+
+    Important: this ranks by when `metadata.json` was last written in blob,
+    not by article publish date.
+    """
     cc = _service(connection_string).get_container_client(container_name)
     rows: list[RecentPost] = []
     for blob in cc.list_blobs(name_starts_with="posts/"):
@@ -59,6 +70,7 @@ def _safe_token(v: str) -> str:
 
 
 def _date_token(meta: dict) -> str:
+    """Pick stable folder prefix token: published_date -> fetched date -> fallback."""
     pd = meta.get("published_date")
     if isinstance(pd, str) and pd.strip():
         return _safe_token(pd.strip())
@@ -76,10 +88,20 @@ def download_recent_posts(
     limit: int = 10,
     include_raw_html: bool = False,
 ) -> dict:
+    """
+    Download latest N posts from blob storage into a local review folder.
+
+    Output shape:
+    - one folder per post (`<date>_<post_id>`)
+    - zh/en HTML + metadata files
+    - optional raw HTML
+    - top-level `index.json` summary for easy scripting
+    """
     out_root = Path(output_dir)
     out_root.mkdir(parents=True, exist_ok=True)
 
     cc = _service(connection_string).get_container_client(container_name)
+    # "Recent" is based on metadata blob write time, then truncated to `limit`.
     recent = list_recent_posts(connection_string, container_name, limit=limit)
 
     exported: list[dict] = []
@@ -130,5 +152,8 @@ def download_recent_posts(
         "downloaded_count": len(exported),
         "posts": exported,
     }
-    (out_root / "index.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out_root / "index.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     return summary

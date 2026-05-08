@@ -4,7 +4,11 @@ from blog_scraper import discover
 
 
 def _fixture(name: str) -> str:
-    return (Path(__file__).resolve().parent / "fixtures" / name).read_text(encoding="utf-8")
+    return (
+        Path(__file__).resolve().parent /
+        "fixtures" /
+        name).read_text(
+        encoding="utf-8")
 
 
 def test_infer_max_pages_from_cn_text():

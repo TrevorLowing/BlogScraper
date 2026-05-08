@@ -1,6 +1,9 @@
 """ACI dispatcher env mapping — no Azure SDK calls."""
 
-from blog_scraper.aci_invoke import aci_dispatcher_configured, build_aci_environment_variables
+from blog_scraper.aci_invoke import (
+    aci_dispatcher_configured,
+    build_aci_environment_variables,
+)
 from blog_scraper.pipeline import PipelineOptions
 
 
