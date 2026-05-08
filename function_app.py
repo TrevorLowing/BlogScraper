@@ -19,6 +19,7 @@ from blog_scraper.pipeline import (
 _LOGGER = logging.getLogger(__name__)
 
 app = func.FunctionApp()
+_TRUTHY = {"1", "true", "yes", "on"}
 
 
 def _options_from_http_body(raw: bytes | None) -> PipelineOptions:
@@ -35,12 +36,12 @@ def _options_from_http_body(raw: bytes | None) -> PipelineOptions:
     schedule=os.environ.get("SCRAPER_TIMER_SCHEDULE", "0 0 10 * * *"),
     arg_name="timer",
     run_on_startup=False,
-    use_monitor=False,
+    use_monitor=True,
 )
 def scheduled_scraper(timer: func.TimerRequest) -> None:
     if getattr(timer, "past_due", False):
         _LOGGER.info("Scheduled run firing (past due).")
-    if os.environ.get("ACI_SCHEDULED", "").lower() in ("1", "true", "yes", "on"):
+    if os.environ.get("ACI_SCHEDULED", "").lower() in _TRUTHY:
         from blog_scraper.aci_invoke import aci_dispatcher_configured, start_blog_scraper_aci
 
         if not aci_dispatcher_configured():
@@ -49,10 +50,10 @@ def scheduled_scraper(timer: func.TimerRequest) -> None:
         try:
             info = start_blog_scraper_aci(PipelineOptions(mode="incremental"), wait=False)
             _LOGGER.info("Dispatched incremental scrape via ACI: %s", info)
-        except ValueError:
-            _LOGGER.warning("ACI dispatcher rejected scheduled run due to invalid configuration.")
-        except Exception:
-            _LOGGER.exception("Scheduled ACI dispatch failed.")
+        except ValueError as exc:
+            _LOGGER.warning("ACI dispatcher rejected scheduled run due to invalid configuration: %s", exc)
+        except RuntimeError:
+            _LOGGER.exception("Scheduled ACI dispatch runtime failure.")
         return
     cfg = BlogScraperConfig.from_environ()
     res = run_pipeline(cfg, PipelineOptions(mode="incremental"))
@@ -110,6 +111,12 @@ def scrape_aci_http(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(
             json.dumps({"error": str(exc)}, ensure_ascii=False),
             status_code=400,
+            mimetype="application/json; charset=utf-8",
+        )
+    except RuntimeError as exc:
+        return func.HttpResponse(
+            json.dumps({"error": f"aci_dispatch_failed: {exc}"}, ensure_ascii=False),
+            status_code=502,
             mimetype="application/json; charset=utf-8",
         )
 

@@ -3,6 +3,8 @@
 - Product requirements: `BlogScraper-PRD.md`
 - Architecture and flow: `ARCHITECTURE_AND_FLOW.md`
 - Lessons learned: `LESSONS_LEARNED.md`
+- Deployment guide: `DEPLOYMENT.md`
+- Changelog: `CHANGELOG.md`
 
 ## Downloader utility
 
