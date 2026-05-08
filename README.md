@@ -14,12 +14,12 @@ Azure-based scraper for `yidaiyilu.gov.cn` that discovers article URLs, extracts
 
 ## Repository Docs
 
-- Product requirements: `BlogScraper-PRD.md`
-- Architecture and flow: `ARCHITECTURE_AND_FLOW.md`
-- Lessons learned: `LESSONS_LEARNED.md`
-- Deployment guide: `DEPLOYMENT.md`
-- Changelog: `CHANGELOG.md`
-- Utility/docs index: `docs.md`
+- Product requirements: [`BlogScraper-PRD.md`](./BlogScraper-PRD.md)
+- Architecture and flow: [`ARCHITECTURE_AND_FLOW.md`](./ARCHITECTURE_AND_FLOW.md)
+- Lessons learned: [`LESSONS_LEARNED.md`](./LESSONS_LEARNED.md)
+- Deployment guide: [`DEPLOYMENT.md`](./DEPLOYMENT.md)
+- Changelog: [`CHANGELOG.md`](./CHANGELOG.md)
+- Utility/docs index: [`docs.md`](./docs.md)
 
 ## Quick Start (Local)
 
@@ -67,4 +67,4 @@ Connection string resolution order:
 
 ## Contributing
 
-See `CONTRIBUTING.md` for conventions and basic workflow.
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for conventions and basic workflow.
