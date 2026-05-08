@@ -36,7 +36,7 @@ def _pipeline_options_from_env() -> PipelineOptions:
         try:
             data = json.loads(raw)
             return pipeline_options_from_dict(data if isinstance(data, dict) else None)
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, ValueError) as exc:
             _LOGGER.warning(
                 "Invalid PIPELINE_OPTIONS_JSON (%s); "
                 "using SCRAPER_PIPELINE_* scalars.",
@@ -50,15 +50,14 @@ def _pipeline_options_from_env() -> PipelineOptions:
     force = _truthy(os.environ.get("SCRAPER_PIPELINE_FORCE", ""))
     mposts = os.environ.get("SCRAPER_PIPELINE_MAX_POSTS", "").strip()
     mpages = os.environ.get("SCRAPER_PIPELINE_MAX_PAGES", "").strip()
-    max_posts = int(mposts) if mposts.isdigit() else None
-    max_pages = int(mpages) if mpages.isdigit() else None
-    return PipelineOptions(
-        mode=mode,
-        max_pages=max_pages,
-        max_posts=max_posts,
-        dry_run=dry,
-        force=force,
-    )
+    payload = {
+        "mode": mode,
+        "max_pages": int(mpages) if mpages.isdigit() else None,
+        "max_posts": int(mposts) if mposts.isdigit() else None,
+        "dry_run": dry,
+        "force": force,
+    }
+    return pipeline_options_from_dict(payload)
 
 
 def _nonzero_exit(

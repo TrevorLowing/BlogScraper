@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+from urllib.parse import urlparse
 from dataclasses import dataclass, field
 
 
@@ -17,6 +19,11 @@ DEFAULT_ACCEPT = (
 )
 DEFAULT_ACCEPT_LANGUAGE = "en-US,en;q=0.9"
 DEFAULT_REFERER = "https://www.google.com/"
+_DEFAULT_SITE_ALLOWED_HOSTS: tuple[str, ...] = ()
+_DEFAULT_TRANSLATOR_ALLOWED_HOSTS: tuple[str, ...] = ()
+_DISALLOWED_EXTRA_HEADERS = frozenset(
+    {"host", "authorization", "ocp-apim-subscription-key"}
+)
 
 
 def _parse_csv_urls(value: str) -> tuple[str, ...]:
@@ -34,13 +41,63 @@ def _parse_headers_json(raw: str) -> dict[str, str]:
     for k, v in data.items():
         if v is None:
             continue
-        out[str(k)] = str(v)
+        key = str(k).strip()
+        if key.lower() in _DISALLOWED_EXTRA_HEADERS:
+            raise ValueError(
+                f"HTTP_EXTRA_HEADERS_JSON disallows overriding header: {key}"
+            )
+        out[key] = str(v)
     return out
 
 
 def normalize_index_path(path: str) -> str:
     p = path.strip()
     return p if p.startswith("/") else "/" + p
+
+
+def _parse_allowed_hosts(value: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    hosts = tuple(h.lower() for h in _parse_csv_urls(value))
+    return hosts if hosts else default
+
+
+def _is_private_or_local_host(host: str) -> bool:
+    normalized = host.strip().lower()
+    if normalized in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    try:
+        ip = ipaddress.ip_address(normalized)
+        return (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+        )
+    except ValueError:
+        return False
+
+
+def _validate_https_url(
+    env_name: str,
+    raw_url: str,
+    *,
+    allowed_hosts: tuple[str, ...],
+) -> str:
+    url = raw_url.strip()
+    parsed = urlparse(url)
+    if parsed.scheme.lower() != "https":
+        raise ValueError(f"{env_name} must use https")
+    if not parsed.netloc:
+        raise ValueError(f"{env_name} must include a valid host")
+    host = parsed.hostname or ""
+    if _is_private_or_local_host(host):
+        raise ValueError(f"{env_name} host is private/local and is not allowed")
+    lower_host = host.lower()
+    if allowed_hosts and not any(
+        lower_host == h or lower_host.endswith(f".{h}") for h in allowed_hosts
+    ):
+        raise ValueError(f"{env_name} host is not in allowed hosts")
+    return url.rstrip("/")
 
 
 @dataclass(frozen=True)
@@ -55,9 +112,15 @@ def list_targets_from_environ() -> tuple[ListTarget, ...]:
     """
     Build discovery targets from JSON override or index path variables.
     """
-    default_base = os.environ.get(
-        "BLOG_SITE_BASE", "https://www.yidaiyilu.gov.cn"
-    ).rstrip("/")
+    site_allowed_hosts = _parse_allowed_hosts(
+        os.environ.get("BLOG_ALLOWED_SITE_HOSTS", ""),
+        _DEFAULT_SITE_ALLOWED_HOSTS,
+    )
+    default_base = _validate_https_url(
+        "BLOG_SITE_BASE",
+        os.environ.get("BLOG_SITE_BASE", "https://www.yidaiyilu.gov.cn"),
+        allowed_hosts=site_allowed_hosts,
+    )
     js = os.environ.get("BLOG_SCRAPER_TARGETS_JSON", "").strip()
     if js:
         data = json.loads(js)
@@ -79,7 +142,11 @@ def list_targets_from_environ() -> tuple[ListTarget, ...]:
                 )
             targets.append(
                 ListTarget(
-                    site_base=str(sb).rstrip("/"),
+                    site_base=_validate_https_url(
+                        f"BLOG_SCRAPER_TARGETS_JSON[{i}].site_base",
+                        str(sb),
+                        allowed_hosts=site_allowed_hosts,
+                    ),
                     index_path=normalize_index_path(
                         str(ip))))
         return tuple(targets)
@@ -138,6 +205,18 @@ class BlogScraperConfig:
             os.environ.get(
                 "BLOG_HTML_EXCLUDE_PATHS",
                 "/p/178715.html"))
+        translator_endpoint_raw = os.environ.get("TRANSLATOR_ENDPOINT", "").strip()
+        translator_allowed_hosts = _parse_allowed_hosts(
+            os.environ.get("TRANSLATOR_ALLOWED_HOSTS", ""),
+            _DEFAULT_TRANSLATOR_ALLOWED_HOSTS,
+        )
+        translator_endpoint = ""
+        if translator_endpoint_raw:
+            translator_endpoint = _validate_https_url(
+                "TRANSLATOR_ENDPOINT",
+                translator_endpoint_raw,
+                allowed_hosts=translator_allowed_hosts,
+            )
         targets = list_targets_from_environ()
         first = targets[0]
 
@@ -153,9 +232,7 @@ class BlogScraperConfig:
                 ".news-details-content",
             ),
             exclude_paths=excludes,
-            translator_endpoint=os.environ.get(
-                "TRANSLATOR_ENDPOINT",
-                ""),
+            translator_endpoint=translator_endpoint,
             translator_key=os.environ.get(
                 "TRANSLATOR_KEY",
                 ""),

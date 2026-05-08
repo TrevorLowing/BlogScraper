@@ -21,6 +21,28 @@ flowchart LR
     Downloader --> LocalArtifacts["Local Review Artifacts"]
 ```
 
+## Security Trust Boundaries
+
+```mermaid
+flowchart LR
+    Internet["Internet"] --> FunctionApi["Function HTTP Endpoints"]
+    FunctionApi --> PipelineRuntime["Pipeline Runtime"]
+    PipelineRuntime --> SourceSite["Source Website"]
+    PipelineRuntime --> TranslatorApi["Azure Translator API"]
+    PipelineRuntime --> BlobStorage["Azure Blob Storage"]
+    FunctionApi --> AciDispatch["ACI Dispatch API"]
+    AciDispatch --> AciRuntime["ACI Runtime"]
+    AciRuntime --> BlobStorage
+    FunctionConfig["Function App Settings"] --> PipelineRuntime
+    KeyVaultRef["Key Vault References (optional)"] --> FunctionConfig
+```
+
+Key controls:
+- Input validation at HTTP and env-config boundaries.
+- Least-privilege RBAC for ACI dispatch identity.
+- Managed identity image pull preference for ACR.
+- Controlled log-tail exposure (`include_logs=true`) with redaction.
+
 ## 1) What the system does
 
 At a high level, BlogScraper:

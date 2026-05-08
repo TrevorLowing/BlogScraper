@@ -15,6 +15,9 @@ from blog_scraper.storage import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_ALLOWED_MODES = frozenset({"incremental", "historical"})
+_MAX_ALLOWED_PAGES = 50
+_MAX_ALLOWED_POSTS = 500
 
 
 @dataclass
@@ -46,13 +49,27 @@ def pipeline_options_from_dict(data: dict | None) -> PipelineOptions:
     """
     if not data or not isinstance(data, dict):
         return PipelineOptions()
-    mode = data.get("mode", "incremental")
+    mode = str(data.get("mode", "incremental")).strip().lower()
+    if mode not in _ALLOWED_MODES:
+        raise ValueError("mode must be one of: incremental, historical")
     max_pages = data.get("max_pages")
     max_posts = data.get("max_posts")
+    max_pages_int = int(max_pages) if max_pages is not None else None
+    max_posts_int = int(max_posts) if max_posts is not None else None
+    if (
+        max_pages_int is not None
+        and (max_pages_int < 1 or max_pages_int > _MAX_ALLOWED_PAGES)
+    ):
+        raise ValueError(f"max_pages must be between 1 and {_MAX_ALLOWED_PAGES}")
+    if (
+        max_posts_int is not None
+        and (max_posts_int < 1 or max_posts_int > _MAX_ALLOWED_POSTS)
+    ):
+        raise ValueError(f"max_posts must be between 1 and {_MAX_ALLOWED_POSTS}")
     return PipelineOptions(
-        mode=str(mode),
-        max_pages=int(max_pages) if max_pages is not None else None,
-        max_posts=int(max_posts) if max_posts is not None else None,
+        mode=mode,
+        max_pages=max_pages_int,
+        max_posts=max_posts_int,
         dry_run=bool(data.get("dry_run", False)),
         force=bool(data.get("force", False)),
     )

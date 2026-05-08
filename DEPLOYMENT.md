@@ -80,7 +80,7 @@ ACR_NAME=<acr-name> ACR_RG=<acr-rg> ./scripts/deploy-aci-scraper.sh
 
 This grants:
 
-- `Contributor` on ACI dispatch resource group
+- `Container Instance Contributor` on ACI dispatch resource group
 - `AcrPull` on ACR
 
 ### 5.3 Configure Function to dispatch ACI
@@ -90,8 +90,7 @@ export AZ_RG=<function-rg>
 export ACI_RESOURCE_GROUP=<aci-rg>
 export ACI_LOCATION=westus2
 export ACI_IMAGE=<acr-login-server>/blog-scraper-runner:v1
-export ACI_REGISTRY_USERNAME=<acr-username>
-export ACI_REGISTRY_PASSWORD=<acr-password>
+export ACI_USE_MANAGED_IDENTITY_PULL=true
 export ACI_SCHEDULED=false
 
 ./scripts/post-publish-aci-dispatch.sh <function-app-name>
@@ -136,6 +135,58 @@ python scripts/download_recent_posts.py --limit 10 --output-dir downloads/recent
 - Service egress behavior can differ: Function direct scrape may be blocked while ACI succeeds.
 - Keep ACR/ACI/Function in aligned regions where possible for simpler operations.
 
+## Security Hardening Runbook
+
+Use this checklist after each deployment to reduce lateral movement risk.
+
+### 1) Verify least-privilege RBAC
+
+Confirm Function MSI has only ACI-scoped role + ACR pull:
+
+```bash
+az role assignment list \
+  --assignee "$(az functionapp identity show -g "$RG" -n "$FUNC_APP" --query principalId -o tsv)" \
+  --all \
+  --query "[].{role:roleDefinitionName,scope:scope}" -o table
+```
+
+Expected:
+- `Container Instance Contributor` on ACI RG scope
+- `AcrPull` on ACR scope
+- No broad `Contributor`/`Owner` on subscription or unrelated RGs
+
+### 2) Disable ACR admin account
+
+```bash
+az acr update -n "$ACR_NAME" -g "$ACR_RG" --admin-enabled false
+az acr show -n "$ACR_NAME" -g "$ACR_RG" --query adminUserEnabled -o tsv
+```
+
+Expected output: `false`
+
+### 3) Use Key Vault reference for translator secret
+
+Set `TRANSLATOR_KEY` app setting to a Key Vault reference value:
+
+```bash
+export TRANSLATOR_KEY_REFERENCE='@Microsoft.KeyVault(SecretUri=https://<vault>.vault.azure.net/secrets/<secret-name>/<version>)'
+./scripts/post-publish-settings.sh "$FUNC_APP"
+```
+
+### 4) Rotate high-impact secrets after posture changes
+
+- Rotate translator key
+- Rotate storage account keys if previously exposed in scripts/logs
+- Rotate any previously used ACR admin passwords (then keep admin disabled)
+
+### 5) Monitor suspicious control-plane actions
+
+Create alerts for:
+- `Microsoft.Authorization/roleAssignments/write`
+- `Microsoft.ContainerInstance/containerGroups/write`
+- `Microsoft.ContainerInstance/containerGroups/delete`
+- Function app config changes (`Microsoft.Web/sites/config/write`)
+
 ## 9) Recommended Bootstrap Order
 
 1. Deploy infra + publish Function.
@@ -172,11 +223,10 @@ export FUNC_APP="<paste-function-app-name>"
 # 4) Build/push ACI runner image
 ACR_NAME=$ACR_NAME ACR_RG=$ACR_RG ./scripts/deploy-aci-scraper.sh
 
-# 5) Get ACR login server + credentials
+# 5) Get ACR login server
 export ACR_SERVER="$(az acr show -g "$ACR_RG" -n "$ACR_NAME" --query loginServer -o tsv)"
 export ACI_IMAGE="$ACR_SERVER/blog-scraper-runner:v1"
-export ACI_REGISTRY_USERNAME="$(az acr credential show -n "$ACR_NAME" --query username -o tsv)"
-export ACI_REGISTRY_PASSWORD="$(az acr credential show -n "$ACR_NAME" --query passwords[0].value -o tsv)"
+export ACI_USE_MANAGED_IDENTITY_PULL=true
 
 # 6) Grant Function managed identity RBAC for ACI + ACR pull
 ./scripts/grant-functions-msi-aci-rbac.sh "$FUNC_APP" "$RG" "$ACI_RG" "$ACR_NAME" "$ACR_RG"
@@ -223,9 +273,9 @@ LOCATION="$LOCATION" RG="$RG" ./scripts/deploy-infra-and-publish.sh
 az functionapp list -g "$RG" --query "[].name" -o tsv
 export FUNC_APP="<paste-function-app-name>"
 
-# 5) Create ACR if missing
+# 5) Create ACR if missing (admin user disabled)
 az acr show -n "$ACR_NAME" -g "$ACR_RG" >/dev/null 2>&1 || \
-  az acr create -n "$ACR_NAME" -g "$ACR_RG" --sku Basic --admin-enabled true
+  az acr create -n "$ACR_NAME" -g "$ACR_RG" --sku Basic --admin-enabled false
 
 # 6) Build/push scraper image
 ACR_NAME="$ACR_NAME" ACR_RG="$ACR_RG" ./scripts/deploy-aci-scraper.sh
@@ -233,8 +283,7 @@ ACR_NAME="$ACR_NAME" ACR_RG="$ACR_RG" ./scripts/deploy-aci-scraper.sh
 # 7) Export ACR values used by Function ACI dispatcher settings
 export ACR_SERVER="$(az acr show -g "$ACR_RG" -n "$ACR_NAME" --query loginServer -o tsv)"
 export ACI_IMAGE="$ACR_SERVER/blog-scraper-runner:v1"
-export ACI_REGISTRY_USERNAME="$(az acr credential show -n "$ACR_NAME" --query username -o tsv)"
-export ACI_REGISTRY_PASSWORD="$(az acr credential show -n "$ACR_NAME" --query passwords[0].value -o tsv)"
+export ACI_USE_MANAGED_IDENTITY_PULL=true
 
 # 8) Grant MSI permissions
 ./scripts/grant-functions-msi-aci-rbac.sh "$FUNC_APP" "$RG" "$ACI_RG" "$ACR_NAME" "$ACR_RG"

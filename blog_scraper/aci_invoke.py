@@ -25,6 +25,11 @@ from azure.mgmt.containerinstance.models import (
 from blog_scraper.pipeline import PipelineOptions, pipeline_options_to_dict
 
 _LOGGER = logging.getLogger(__name__)
+_LOG_REDACTION_PATTERNS = (
+    re.compile(r"(?i)(accountkey=)[^;\\s]+"),
+    re.compile(r"(?i)(password=)[^;\\s]+"),
+    re.compile(r"(?i)(ocp-apim-subscription-key[:=]\\s*)[^\\s]+"),
+)
 
 _CONTAINER_CMD = ["python", "-m", "blog_scraper.aci_runner"]
 
@@ -252,7 +257,10 @@ def start_blog_scraper_aci(
 
 
 def fetch_aci_job_status(
-    container_group_name: str | None, *, resource_group: str | None = None
+    container_group_name: str | None,
+    *,
+    resource_group: str | None = None,
+    include_logs: bool = False,
 ) -> dict[str, Any]:
     """Inspect provisioning state + container instance view for a scrape job."""
     rg = (resource_group or os.environ.get("ACI_RESOURCE_GROUP") or "").strip()
@@ -274,11 +282,20 @@ def fetch_aci_job_status(
             break
 
     logs_text: str | None = None
-    try:
-        logs = client.containers.list_logs(rg, container_group_name, ctr_name, tail=200)
-        logs_text = getattr(logs, "content", None)
-    except Exception as exc:  # noqa: BLE001
-        _LOGGER.debug("Logs not available yet: %s", exc)
+    if include_logs:
+        try:
+            logs = client.containers.list_logs(
+                rg,
+                container_group_name,
+                ctr_name,
+                tail=200,
+            )
+            logs_text = getattr(logs, "content", None)
+            if logs_text:
+                for pattern in _LOG_REDACTION_PATTERNS:
+                    logs_text = pattern.sub(r"\1[REDACTED]", logs_text)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("Logs not available yet: %s", exc)
 
     return {
         "subscription_id": _subscription_id_from_environ(),
@@ -287,6 +304,7 @@ def fetch_aci_job_status(
         "provisioning_state": getattr(cg, "provisioning_state", None),
         "instance_state": state,
         "exit_code": exit_code,
+        "logs_included": include_logs,
         "logs_tail": logs_text,
     }
 
@@ -309,6 +327,13 @@ def aci_dispatcher_configured() -> bool:
     if not rg or not image:
         return False
     if ".azurecr.io/" in image.lower():
+        if os.environ.get("ACI_USE_MANAGED_IDENTITY_PULL", "true").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        ):
+            return True
         u = os.environ.get("ACI_REGISTRY_USERNAME", "").strip()
         p = os.environ.get("ACI_REGISTRY_PASSWORD", "").strip()
         return bool(u and p)

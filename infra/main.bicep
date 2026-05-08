@@ -11,6 +11,9 @@ param hostPlan string = 'Basic'
 @description('Disable if Microsoft.OperationalInsights is not registered on the subscription yet.')
 param enableAppInsights bool = false
 
+@description('Optional Key Vault reference for TRANSLATOR_KEY app setting.')
+param translatorKeyReference string = ''
+
 var storageAccountName = toLower('blogst${nameSuffix}')
 var functionAppName = 'blogscrapr-${toLower(nameSuffix)}'
 var hostingPlanName = 'blogscrap-${toLower(nameSuffix)}'
@@ -81,6 +84,7 @@ resource hostingPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
 }
 
 var appInsightsConnectionString = enableAppInsights ? applicationInsights!.properties.ConnectionString : ''
+var translatorKeyAppSettingValue = empty(translatorKeyReference) ? '' : translatorKeyReference
 
 resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   name: functionAppName
@@ -162,7 +166,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           }
           {
             name: 'TRANSLATOR_KEY'
-            value: ''
+            value: translatorKeyAppSettingValue
           }
           {
             name: 'TRANSLATOR_REGION'
@@ -171,6 +175,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           {
             name: 'BLOG_HTML_EXCLUDE_PATHS'
             value: '/p/178715.html'
+          }
+          {
+            name: 'ACI_USE_MANAGED_IDENTITY_PULL'
+            value: 'true'
           }
       ]
     }

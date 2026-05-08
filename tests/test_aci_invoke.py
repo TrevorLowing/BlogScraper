@@ -7,11 +7,12 @@ from blog_scraper.aci_invoke import (
 from blog_scraper.pipeline import PipelineOptions
 
 
-def test_aci_dispatcher_requires_acr_creds(monkeypatch) -> None:
+def test_aci_dispatcher_requires_acr_creds_when_mi_pull_disabled(monkeypatch) -> None:
     monkeypatch.setenv("ACI_SUBSCRIPTION_ID", "11111111-1111-1111-1111-111111111111")
     monkeypatch.setenv("ACI_RESOURCE_GROUP", "rg-test")
     monkeypatch.delenv("ACI_REGISTRY_USERNAME", raising=False)
     monkeypatch.delenv("ACI_REGISTRY_PASSWORD", raising=False)
+    monkeypatch.setenv("ACI_USE_MANAGED_IDENTITY_PULL", "false")
     monkeypatch.setenv(
         "ACI_IMAGE",
         "myacr.azurecr.io/blog-scraper-runner:v1",
@@ -20,6 +21,16 @@ def test_aci_dispatcher_requires_acr_creds(monkeypatch) -> None:
 
     monkeypatch.setenv("ACI_REGISTRY_USERNAME", "myacr")
     monkeypatch.setenv("ACI_REGISTRY_PASSWORD", "x")
+    assert aci_dispatcher_configured() is True
+
+
+def test_aci_dispatcher_allows_acr_when_mi_pull_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("ACI_SUBSCRIPTION_ID", "11111111-1111-1111-1111-111111111111")
+    monkeypatch.setenv("ACI_RESOURCE_GROUP", "rg-test")
+    monkeypatch.setenv("ACI_USE_MANAGED_IDENTITY_PULL", "true")
+    monkeypatch.delenv("ACI_REGISTRY_USERNAME", raising=False)
+    monkeypatch.delenv("ACI_REGISTRY_PASSWORD", raising=False)
+    monkeypatch.setenv("ACI_IMAGE", "myacr.azurecr.io/blog-scraper-runner:v1")
     assert aci_dispatcher_configured() is True
 
 

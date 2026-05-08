@@ -9,7 +9,7 @@ set -euo pipefail
 #   ACI_IMAGE                — Full image URL, e.g. myacr.azurecr.io/blog-scraper-runner:v1
 #   ACI_LOCATION             — e.g. eastasia
 #
-# Required secrets:
+# Optional secrets (only needed when not using managed identity pull):
 #   ACI_REGISTRY_USERNAME
 #   ACI_REGISTRY_PASSWORD
 #
@@ -36,26 +36,36 @@ if [[ -z "${REG_SERVER}" ]] && [[ "$IMAGE" == *"/"* ]]; then
   REG_SERVER="${IMAGE%%/*}"
 fi
 
-REG_USER="${ACI_REGISTRY_USERNAME:?export ACI_REGISTRY_USERNAME}"
-REG_PASS="${ACI_REGISTRY_PASSWORD:?export ACI_REGISTRY_PASSWORD}"
+USE_MI_PULL="${ACI_USE_MANAGED_IDENTITY_PULL:-true}"
+REG_USER="${ACI_REGISTRY_USERNAME:-}"
+REG_PASS="${ACI_REGISTRY_PASSWORD:-}"
+if [[ "$USE_MI_PULL" != "true" && "$USE_MI_PULL" != "1" && "$USE_MI_PULL" != "yes" && "$USE_MI_PULL" != "on" ]]; then
+  REG_USER="${ACI_REGISTRY_USERNAME:?export ACI_REGISTRY_USERNAME or set ACI_USE_MANAGED_IDENTITY_PULL=true}"
+  REG_PASS="${ACI_REGISTRY_PASSWORD:?export ACI_REGISTRY_PASSWORD or set ACI_USE_MANAGED_IDENTITY_PULL=true}"
+fi
 
 CPU="${ACI_CPU:-1}"
 MEM="${ACI_MEMORY_GB:-1.5}"
 CT_NAME="${ACI_CONTAINER_NAME:-blogscraper}"
 SCHED="${ACI_SCHEDULED:-false}"
 
+SETTINGS=(
+  "ACI_SUBSCRIPTION_ID=${ACI_SUB}"
+  "ACI_RESOURCE_GROUP=${RG_ACI}"
+  "ACI_LOCATION=${LOC}"
+  "ACI_IMAGE=${IMAGE}"
+  "ACI_REGISTRY_SERVER=${REG_SERVER}"
+  "ACI_CPU=${CPU}"
+  "ACI_MEMORY_GB=${MEM}"
+  "ACI_CONTAINER_NAME=${CT_NAME}"
+  "ACI_SCHEDULED=${SCHED}"
+  "ACI_USE_MANAGED_IDENTITY_PULL=${USE_MI_PULL}"
+)
+if [[ -n "${REG_USER}" ]]; then SETTINGS+=("ACI_REGISTRY_USERNAME=${REG_USER}"); fi
+if [[ -n "${REG_PASS}" ]]; then SETTINGS+=("ACI_REGISTRY_PASSWORD=${REG_PASS}"); fi
+
 az functionapp config appsettings set -g "$FUN_RG" -n "$APP" --settings \
-  "ACI_SUBSCRIPTION_ID=${ACI_SUB}" \
-  "ACI_RESOURCE_GROUP=${RG_ACI}" \
-  "ACI_LOCATION=${LOC}" \
-  "ACI_IMAGE=${IMAGE}" \
-  "ACI_REGISTRY_SERVER=${REG_SERVER}" \
-  "ACI_REGISTRY_USERNAME=${REG_USER}" \
-  "ACI_REGISTRY_PASSWORD=${REG_PASS}" \
-  "ACI_CPU=${CPU}" \
-  "ACI_MEMORY_GB=${MEM}" \
-  "ACI_CONTAINER_NAME=${CT_NAME}" \
-  "ACI_SCHEDULED=${SCHED}" \
+  "${SETTINGS[@]}" \
   --output none
 
 echo "ACI dispatcher settings applied to ${APP} (AZ_RG=${FUN_RG}), ACI_SCHEDULED=${SCHED}."

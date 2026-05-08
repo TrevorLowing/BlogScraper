@@ -6,6 +6,8 @@ set -euo pipefail
 #   AZ_RG — Function App resource group (default blog-scraper-wus2)
 #   AZ_TRANSLATOR_RG — Cognitive Services resource group for translator keys (default blog-scraper-wus2)
 #   AZ_TRANSLATOR_ACCOUNT — Translator account name (default blogscraprtrwus2)
+#   TRANSLATOR_KEY_REFERENCE — optional Key Vault reference string, e.g.
+#     @Microsoft.KeyVault(SecretUri=https://<vault>.vault.azure.net/secrets/<name>/<version>)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RG="${AZ_RG:-blog-scraper-wus2}"
@@ -13,12 +15,21 @@ TRG="${AZ_TRANSLATOR_RG:-blog-scraper-wus2}"
 TR="${AZ_TRANSLATOR_ACCOUNT:-blogscraprtrwus2}"
 APP="${1:?Usage: $0 <function-app-name>}"
 
-KEY="$(az cognitiveservices account keys list -g "$TRG" -n "$TR" --query key1 -o tsv)"
+KEY_REF="${TRANSLATOR_KEY_REFERENCE:-}"
+KEY=""
+if [[ -z "${KEY_REF}" ]]; then
+  KEY="$(az cognitiveservices account keys list -g "$TRG" -n "$TR" --query key1 -o tsv)"
+fi
+
+TRANSLATOR_KEY_VALUE="$KEY"
+if [[ -n "${KEY_REF}" ]]; then
+  TRANSLATOR_KEY_VALUE="$KEY_REF"
+fi
 
 az functionapp config appsettings set -g "$RG" -n "$APP" --settings \
   "TRANSLATOR_ENDPOINT=https://api.cognitive.microsofttranslator.com" \
   "TRANSLATOR_REGION=westus2" \
-  "TRANSLATOR_KEY=${KEY}" \
+  "TRANSLATOR_KEY=${TRANSLATOR_KEY_VALUE}" \
   "HTTP_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
   "SCRAPE_TIMEOUT_SECONDS=120" \
   --output none

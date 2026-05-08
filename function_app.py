@@ -22,20 +22,40 @@ app = func.FunctionApp()
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
+def _error_response(
+    *,
+    code: str,
+    message: str,
+    status_code: int,
+) -> func.HttpResponse:
+    return func.HttpResponse(
+        json.dumps({"error": code, "message": message}, ensure_ascii=False),
+        status_code=status_code,
+        mimetype="application/json; charset=utf-8",
+    )
+
+
 def _options_from_http_body(raw: bytes | None) -> PipelineOptions:
     """
     Parse optional JSON body into PipelineOptions.
 
-    We intentionally fail open (return defaults) if body parsing fails so
-    operators can still trigger a run even with malformed JSON.
+    For HTTP endpoints we fail closed on malformed input.
     """
     if not raw:
         return PipelineOptions()
     try:
         data = json.loads(raw.decode("utf-8"))
-        return pipeline_options_from_dict(data if isinstance(data, dict) else None)
-    except (json.JSONDecodeError, UnicodeDecodeError, ValueError, TypeError):
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError("Request body must be valid JSON.") from exc
+    if data is None:
         return PipelineOptions()
+    if not isinstance(data, dict):
+        raise ValueError("Request body must be a JSON object.")
+    return pipeline_options_from_dict(data)
+
+
+def _is_truthy(raw: str | None) -> bool:
+    return (raw or "").strip().lower() in _TRUTHY
 
 
 @app.timer_trigger(
@@ -98,7 +118,15 @@ def scheduled_scraper(timer: func.TimerRequest) -> None:
 def scrape_http(req: func.HttpRequest) -> func.HttpResponse:
     """HTTP API to run scraper in-process and return a compact JSON summary."""
     cfg = BlogScraperConfig.from_environ()
-    options = _options_from_http_body(req.get_body())
+    try:
+        options = _options_from_http_body(req.get_body())
+    except ValueError as exc:
+        _LOGGER.warning("Invalid scrape request options: %s", exc)
+        return _error_response(
+            code="invalid_request_options",
+            message="Invalid scrape request options.",
+            status_code=400,
+        )
     _LOGGER.info(
         "HTTP scrape start mode=%s dry_run=%s force=%s max_pages=%s max_posts=%s",
         options.mode,
@@ -146,20 +174,13 @@ def scrape_aci_http(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         if not aci_dispatcher_configured():
-            return func.HttpResponse(
-                json.dumps(
-                    {
-                        "error": "aci_not_configured",
-                        "hint": (
-                            "Set ACI_SUBSCRIPTION_ID (or AZURE_SUBSCRIPTION_ID), "
-                            "ACI_RESOURCE_GROUP, ACI_IMAGE, ACI_REGISTRY_USERNAME, "
-                            "and ACI_REGISTRY_PASSWORD when using ACR images "
-                            "(see local.settings.json.example)."
-                        ),
-                    },
+            return _error_response(
+                code="aci_not_configured",
+                message=(
+                    "ACI dispatcher settings are incomplete "
+                    "(subscription/resource group/image and pull auth settings)."
                 ),
                 status_code=400,
-                mimetype="application/json; charset=utf-8",
             )
 
         options = _options_from_http_body(req.get_body())
@@ -184,22 +205,18 @@ def scrape_aci_http(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json; charset=utf-8",
         )
     except ValueError as exc:
-        return func.HttpResponse(
-            json.dumps(
-                {"error": str(exc)},
-                ensure_ascii=False,
-            ),
+        _LOGGER.warning("ACI dispatch rejected request: %s", exc)
+        return _error_response(
+            code="invalid_request_or_configuration",
+            message="Invalid request or ACI dispatcher configuration.",
             status_code=400,
-            mimetype="application/json; charset=utf-8",
         )
     except RuntimeError as exc:
-        return func.HttpResponse(
-            json.dumps(
-                {"error": f"aci_dispatch_failed: {exc}"},
-                ensure_ascii=False,
-            ),
+        _LOGGER.exception("ACI dispatch failed: %s", exc)
+        return _error_response(
+            code="aci_dispatch_failed",
+            message="Failed to dispatch ACI job.",
             status_code=502,
-            mimetype="application/json; charset=utf-8",
         )
 
 
@@ -219,18 +236,18 @@ def scrape_aci_status_http(req: func.HttpRequest) -> func.HttpResponse:
     try:
         name = req.params.get("group") or req.params.get("name")
         rg_override = req.params.get("rg")
+        include_logs = _is_truthy(req.params.get("include_logs"))
         if not name:
-            return func.HttpResponse(
-                json.dumps(
-                    {"error": 'Query "group=<container_group_name>" is required.'}
-                ),
+            return _error_response(
+                code="missing_group",
+                message='Query "group=<container_group_name>" is required.',
                 status_code=400,
-                mimetype="application/json; charset=utf-8",
             )
 
         summary = fetch_aci_job_status(
             name,
             resource_group=rg_override.strip() if rg_override else None,
+            include_logs=include_logs,
         )
         return func.HttpResponse(
             json.dumps(summary, ensure_ascii=False),
@@ -238,8 +255,9 @@ def scrape_aci_status_http(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json; charset=utf-8",
         )
     except ValueError as exc:
-        return func.HttpResponse(
-            json.dumps({"error": str(exc)}, ensure_ascii=False),
+        _LOGGER.warning("Invalid scrape-aci-status request: %s", exc)
+        return _error_response(
+            code="invalid_status_request",
+            message="Invalid status request parameters.",
             status_code=400,
-            mimetype="application/json; charset=utf-8",
         )

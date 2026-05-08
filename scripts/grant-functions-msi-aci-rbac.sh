@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 #
-# Step 2 — Grant the Function App system-assigned identity permission to dispatch ACI and pull from ACR.
+# Step 2 — Grant Function MSI least-privilege access for ACI dispatch and ACR pull.
 #
 # Enables identity if absent, then assigns:
-#   - Contributor on the resource group used for Azure Container Instances (create/update/delete container groups).
+#   - Container Instance Contributor on the ACI resource group.
 #   - AcrPull on the specified Container Registry resource.
 #
 # Usage:
@@ -31,13 +31,13 @@ fi
 SCOPE_DISPATCH="/subscriptions/$SUB/resourceGroups/$ACI_RG"
 ACR_SCOPE="$(az acr show -g "$ACR_RG" -n "$ACR_NAME" --query id -o tsv)"
 
-echo "Assign Contributor on $SCOPE_DISPATCH to $principal"
+echo "Assign Container Instance Contributor on $SCOPE_DISPATCH to $principal"
 if ! az role assignment create \
   --assignee "$principal" \
-  --role "Contributor" \
+  --role "Container Instance Contributor" \
   --scope "$SCOPE_DISPATCH" \
   --output none 2>/dev/null; then
-  echo "  (Contributor assignment may already exist — continuing)"
+  echo "  (Container Instance Contributor assignment may already exist — continuing)"
 fi
 
 echo "Assign AcrPull on registry to $principal"

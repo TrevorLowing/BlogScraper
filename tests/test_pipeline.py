@@ -5,7 +5,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from blog_scraper.config import BlogScraperConfig
-from blog_scraper.pipeline import PipelineOptions, pipeline_result_summary, run_pipeline
+from blog_scraper.pipeline import (
+    PipelineOptions,
+    pipeline_options_from_dict,
+    pipeline_result_summary,
+    run_pipeline,
+)
 
 _LIST = (
     "<html><body>"
@@ -161,10 +166,7 @@ def test_two_index_paths_merge_discovered_urls(monkeypatch):
     assert mocked_upload.call_count == 2
     post_ids = {c.kwargs["post_id"] for c in mocked_upload.call_args_list}
     assert post_ids == {"PIP001", "PIP002"}
-    from blog_scraper.pipeline import (
-        pipeline_options_from_dict,
-        pipeline_options_to_dict,
-    )
+    from blog_scraper.pipeline import pipeline_options_to_dict
 
     incoming = {
         "mode": "historical",
@@ -237,3 +239,15 @@ def test_run_pipeline_persists_metadata_when_translation_fails(monkeypatch):
     assert uploads[0]["translator_mode"].endswith("_failed")
     assert uploads[0]["en_translation"].startswith("[TRANSLATION_FAILED]")
     assert any("translation_failed" in e for e in res.errors)
+
+
+def test_pipeline_options_reject_invalid_mode() -> None:
+    with pytest.raises(ValueError, match="mode must be one of"):
+        pipeline_options_from_dict({"mode": "fullcrawl"})
+
+
+def test_pipeline_options_reject_out_of_range_limits() -> None:
+    with pytest.raises(ValueError, match="max_pages must be between"):
+        pipeline_options_from_dict({"mode": "historical", "max_pages": 999})
+    with pytest.raises(ValueError, match="max_posts must be between"):
+        pipeline_options_from_dict({"mode": "historical", "max_posts": 0})
